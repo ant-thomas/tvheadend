@@ -109,6 +109,108 @@ diseqc_setup(int fe_fd, int lnb_num, int voltage, int band,
 }
 
 int
+diseqc_rotor_gotox(int fe_fd, int pos) {
+  int err;
+
+  /* turn off continuous tone */
+  tvhtrace("diseqc", "disabling continuous tone");
+  if ((err = ioctl(fe_fd, FE_SET_TONE, SEC_TONE_OFF))) {
+	tvhlog(LOG_ERR, "diseqc", "error trying to turn off continuous tone");
+    return err;
+  }
+
+  /* set lnb voltage */
+  tvhtrace("diseqc", "setting lnb voltage to 18V");
+  if ((err = ioctl(fe_fd, FE_SET_VOLTAGE, SEC_VOLTAGE_18))) {
+	tvhlog(LOG_ERR, "diseqc", "error setting lnb voltage");
+    return err;
+  }
+  msleep(15);
+
+  tvhtrace("diseqc", "GOTOX goto stored position %d", pos);
+
+  if ((err = diseqc_send_msg(fe_fd, 0xE0, 0x31, 0x6B, 0x00 | pos, 0, 0, 4))) {
+	tvhlog(LOG_ERR, "diseqc", "error sending USALS goto diseqc command");
+    return err;
+  }
+  msleep(15);
+
+  return 0;
+}
+
+int
+diseqc_rotor_usals(int fe_fd, double lat, double lng, double pos) {
+
+  /*
+     USALS rotor logic adapted from tune-s2 
+     http://updatelee.blogspot.com/2010/09/tune-s2.html 
+    
+     Antenna Alignment message data format: 
+     http://www.dvb.org/technology/standards/A155-3_DVB-RCS2_Higher_layer_satellite_spec.pdf 
+  */
+
+  int err;
+
+  /* turn off continuous tone */
+  tvhtrace("diseqc", "disabling continuous tone");
+  if ((err = ioctl(fe_fd, FE_SET_TONE, SEC_TONE_OFF))) {
+	tvhlog(LOG_ERR, "diseqc", "error trying to turn off continuous tone");
+    return err;
+  }
+
+  /* set lnb voltage */
+  tvhtrace("diseqc", "setting lnb voltage to 18V");
+  if ((err = ioctl(fe_fd, FE_SET_VOLTAGE, SEC_VOLTAGE_18))) {
+	tvhlog(LOG_ERR, "diseqc", "error setting lnb voltage");
+    return err;
+  }
+  msleep(15);
+
+  double r_eq = 6378.14;
+  double r_sat = 42164.57;
+    
+  double site_lat  = (lat * TO_RADS);
+  double site_lng = (lng * TO_RADS);
+  double sat_lng  = (pos * TO_RADS);
+        
+  double dishVector[3] = {
+    (r_eq * cos(site_lat)),
+    0,
+    (r_eq * sin(site_lat))
+  };
+    
+  double satVector[3] = {
+    (r_sat * cos(site_lng - sat_lng)),
+    (r_sat * sin(site_lng - sat_lng)),
+    0
+  };
+    
+  double satPointing[3] = {
+    (satVector[0] - dishVector[0]),
+    (satVector[1] - dishVector[1]),
+    (satVector[2] - dishVector[2])
+  };
+        
+  double motor_angle = ((atan(satPointing[1] / satPointing[0])) * TO_DEC);
+
+  tvhtrace("diseqc", "USALS goto %.1f%c (motor angle is %.2f %s)", fabs(pos), 
+           (pos > 0.0) ? 'E' : 'W', motor_angle, (motor_angle > 0.0) ? "counterclockwise" : "clockwise");
+        
+  int sixteenths = ((fabs(motor_angle) * 16.0) + 0.5);
+    
+  int angle_1 = (((motor_angle > 0.0) ? 0xd0 : 0xe0) | (sixteenths >> 8));
+  int angle_2 = (sixteenths & 0xff);
+
+  if ((err = diseqc_send_msg(fe_fd, 0xE0, 0x31, 0x6E, angle_1, angle_2, 0, 5))) {
+	tvhlog(LOG_ERR, "diseqc", "error sending USALS goto diseqc command");
+    return err;
+  }
+  msleep(15);
+
+  return 0;
+}
+
+int
 diseqc_voltage_off(int fe_fd)
 {
   int err;
