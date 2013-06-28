@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#include <locale.h>
 #include "htsmsg.h"
 
 static void htsmsg_clear(htsmsg_t *msg);
@@ -416,14 +417,36 @@ int
 htsmsg_get_dbl(htsmsg_t *msg, const char *name, double *dblp)
 {
   htsmsg_field_t *f;
+  char* buf;
+  char* c;
+  struct lconv *cv = localeconv();
 
   if((f = htsmsg_field_find(msg, name)) == NULL)
     return HTSMSG_ERR_FIELD_NOT_FOUND;
 
-  if(f->hmf_type != HMF_DBL)
+  switch(f->hmf_type) {
+  default:
     return HTSMSG_ERR_CONVERSION_IMPOSSIBLE;
+  case HMF_DBL:
+    *dblp = f->hmf_dbl;
+    break;
+  case HMF_S64:
+    *dblp = f->hmf_s64;
+    break;
+  case HMF_STR:
+    buf = strdup(f->hmf_str);
+    c = buf;
+    while (*c) {
+      if (*c == '.') {
+        *c = cv->decimal_point[0];
+      }
+      c++;
+    }
+    *dblp = strtod(buf, NULL);
+    free(buf);
+    break;
+  }
 
-  *dblp = f->hmf_dbl;
   return 0;
 }
 

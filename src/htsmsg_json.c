@@ -22,11 +22,11 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <locale.h>
 
 #include "htsmsg_json.h"
 #include "htsbuf.h"
 #include "misc/json.h"
-#include "misc/dbl.h"
 
 
 /**
@@ -38,6 +38,8 @@ htsmsg_json_write(htsmsg_t *msg, htsbuf_queue_t *hq, int isarray,
 {
   htsmsg_field_t *f;
   char buf[100];
+  char* c;
+  struct lconv *cv = localeconv();
   static const char *indentor = "\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t";
 
   htsbuf_append(hq, isarray ? "[" : "{", 1);
@@ -75,7 +77,14 @@ htsmsg_json_write(htsmsg_t *msg, htsbuf_queue_t *hq, int isarray,
       break;
 
     case HMF_DBL:
-      my_double2str(buf, sizeof(buf), f->hmf_dbl);
+      snprintf(buf, sizeof(buf), "%f", f->hmf_dbl);
+      c = buf;
+      while (*c != 0) {
+        if (*c == cv->decimal_point[0]) {
+          *c = '.';
+        }
+        c++;
+      }
       htsbuf_append(hq, buf, strlen(buf));
       break;
 
